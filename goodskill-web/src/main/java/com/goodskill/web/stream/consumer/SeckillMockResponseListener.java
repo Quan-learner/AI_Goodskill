@@ -1,0 +1,53 @@
+package com.goodskill.web.stream.consumer;
+
+import com.goodskill.core.enums.SeckillSolutionEnum;
+import com.goodskill.core.feign.SeckillFeignClient;
+import com.goodskill.core.pojo.dto.SeckillMockResponseDTO;
+import com.goodskill.web.util.TaskTimeCaculateUtil;
+import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.util.Date;
+import java.util.function.Consumer;
+
+/**
+ * 秒杀
+ */
+@Slf4j
+@Configuration
+public class SeckillMockResponseListener {
+    @Resource
+    private SeckillFeignClient seckillFeignClient;
+
+    @Bean
+    public Consumer<SeckillMockResponseDTO> seckillResult() {
+        return responseDto -> {
+            long seckillId = responseDto.getSeckillId();
+            String note = responseDto.getNote();
+
+            if (Boolean.TRUE.equals(responseDto.getStatus())) {
+                log.info("秒杀活动结束，{}时间：{},秒杀id：{}", note, new Date(), seckillId);
+                long successKillCount = seckillFeignClient.getSuccessKillCount(seckillId);
+                long temp = 0;
+                while (successKillCount != temp) {
+                    // 计算总数可能有延迟，等待统计数据稳定后得到最终结果
+                    log.info("最终成功交易笔数统计中。。。");
+                    successKillCount = temp;
+                    try {
+                        Thread.sleep(1500L);
+                    } catch (InterruptedException e) {
+                        log.warn(e.getMessage(), e);
+                    }
+                    temp = seckillFeignClient.getSuccessKillCount(seckillId);
+                }
+                TaskTimeCaculateUtil.stop(responseDto.getTaskId());
+                log.info("最终成功交易笔数：{}", successKillCount);
+                log.info("历史任务耗时统计：{}", TaskTimeCaculateUtil.prettyPrint(responseDto.getTaskId()));
+
+                seckillFeignClient.endSeckill(seckillId);
+            }
+        };
+    }
+}

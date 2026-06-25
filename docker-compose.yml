@@ -1,0 +1,334 @@
+version: "3"
+
+services:
+  rabbitmq-management:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - somenetwork
+
+  nacos:
+    container_name: nacos
+    environment:
+      - PREFER_HOST_MODE=hostname
+      - MODE=standalone
+#      - NACOS_AUTH_IDENTITY_KEY=nacos
+#      - NACOS_AUTH_IDENTITY_VALUE=my-nacos
+#      - NACOS_AUTH_TOKEN=123456
+      - NACOS_AUTH_ENABLE=true
+    volumes:
+      - ./doc/docker/nacos/standalone-logs/:/home/nacos/standalone-logs
+      - ./doc/docker/nacos/init.d/custom.properties:/home/nacos/init.d/custom.properties
+      - ./doc/docker/nacos/conf/application.properties:/home/nacos/conf/application.properties
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+    restart: always
+    build:
+      context: ./doc/docker/nacos
+    networks:
+      - somenetwork
+
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:latest
+    volumes:
+      - ./doc/docker/nacos/prometheus/prometheus-standalone.yaml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    depends_on:
+      - nacos
+    restart: on-failure
+    networks:
+      - somenetwork
+  grafana:
+    container_name: grafana
+    image: grafana/grafana:latest
+    ports:
+      - 3000:3000
+    restart: on-failure
+    networks:
+      - somenetwork
+
+  nginx:
+    image: nginx
+    container_name: nginx
+    volumes:
+      - ./doc/docker/nginx/templates:/etc/nginx/templates
+    ports:
+      - "80:80"
+    environment:
+      - NGINX_HOST=foobar.com
+      - NGINX_PORT=80
+
+  zookeeper:
+    image: zookeeper:3.6.2
+    container_name: zookeeper
+    restart: always
+    ports:
+      - "2181:2181"
+    networks:
+      - somenetwork
+
+  kafka:
+    image: apache/kafka:3.9.1
+    hostname: kafka
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092'
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+      KAFKA_LISTENERS: 'CONTROLLER://:29093,PLAINTEXT://:9092'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      CLUSTER_ID: '4L6g3nShT-eMCtK--X86sw'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 1
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+    restart: always
+    networks:
+      - somenetwork
+
+  kafbat-ui:
+    image: ghcr.io/kafbat/kafka-ui:latest
+    container_name: kafbat-ui
+    ports:
+      - "38080:8080"
+    environment:
+      DYNAMIC_CONFIG_ENABLED: 'true'
+      KAFKA_CLUSTERS_0_NAME: local-dev
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_PROPERTIES_SASL_MECHANISM: PLAIN
+      KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: PLAINTEXT
+    depends_on:
+      - kafka
+    networks:
+      - somenetwork
+
+  redis:
+    image: redis
+    container_name: redis
+    restart: always
+    environment:
+      - TZ=Asia/Shanghai
+    ports:
+      - "6379:6379"
+    networks:
+      - somenetwork
+    command: [ "redis-server", "--appendonly", "yes", "--requirepass", "123456" ]
+
+  redisinsight:
+    image: redislabs/redisinsight:latest
+    container_name: redisinsight
+    restart: always
+    environment:
+      - TZ=Asia/Shanghai
+    ports:
+      - "8001:8001"
+    networks:
+      - somenetwork
+
+  elasticsearch:
+    image: elasticsearch:8.14.3
+    container_name: elasticsearch
+    environment:
+      - "cluster.name=elasticsearch" #设置集群名称为elasticsearch
+      - "discovery.type=single-node" #以单一节点模式启动
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m" #设置使用jvm内存大小
+      - "xpack.security.enabled=false" #禁用安全功能
+    volumes:
+      - ./doc/docker/elasticsearch/plugins:/usr/share/elasticsearch/plugins #插件文件挂载
+#      - ./doc/docker/elasticsearch/data:/usr/share/elasticsearch/data #数据文件挂载
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - somenetwork
+
+  kibana:
+    image: kibana:8.14.3
+    container_name: kibana
+    depends_on:
+      - elasticsearch
+    environment:
+      - "ELASTICSEARCH_HOSTS=http://elasticsearch:9200" #设置访问elasticsearch的地址
+    ports:
+      - "5601:5601"
+    networks:
+      - somenetwork
+
+  logstash:
+    image: logstash:8.14.3
+    container_name: logstash
+    volumes:
+      - ./doc/docker/logstash/logstash-springboot.conf:/usr/share/logstash/pipeline/logstash.conf #挂载logstash的配置文件
+    depends_on:
+      - elasticsearch
+    ports:
+      - "4560:4560"
+    networks:
+      - somenetwork
+
+  mysql:
+    image: mysql:8.0.29
+    container_name: mysql
+    restart: always
+    ports:
+      - "3306:3306"
+    command:
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+      --lower-case-table-names=1
+    volumes:
+      - ./goodskill-web/src/main/sql:/docker-entrypoint-initdb.d/
+    environment:
+      MYSQL_ROOT_PASSWORD: "Password123"
+      MYSQL_DATABASE: "seckill"
+      MYSQL_USER: "seckill"
+      MYSQL_PASSWORD: "Password123"
+    networks:
+      - somenetwork
+
+  mongo:
+    image: mongo:6.0.7
+    container_name: mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    networks:
+      - somenetwork
+#    environment:
+#      MONGO_INITDB_ROOT_USERNAME: root
+#      MONGO_INITDB_ROOT_PASSWORD: root
+
+  postgres-ai:
+    image: pgvector/pgvector:pg15
+    container_name: postgres-ai
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: vector_db
+      POSTGRES_USER: goodskill
+      POSTGRES_PASSWORD: Password123
+    volumes:
+      - ./doc/docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - somenetwork
+
+  seata-server:
+    image: seataio/seata-server:2.0.0
+    container_name: seata-server
+    hostname: seata-server
+    ports:
+      - "8091:8091"
+      - "7091:7091"
+    environment:
+      # 注册到nacos上的ip。客户端将通过该ip访问seata服务。
+      # 注意公网ip和内网ip的差异。
+      - SEATA_IP=192.168.0.100
+      - SEATA_PORT=8091
+    #      - STORE_MODE=db
+    #      - SEATA_CONFIG_NAME=file:/root/seata-config/registry.conf
+    volumes:
+      - ./doc/docker/seata/resources/application.yml:/seata-server/resources/application.yml
+    networks:
+      - somenetwork
+
+#  goodses:
+#    build: ./goodskill-es-provider
+#    container_name: goodses
+#    volumes:
+#      - /logs/goods-es/:/logs/goodskill
+#    depends_on:
+#      - elasticsearch
+#      - nacos
+##      - elasticsearch1
+#    networks:
+#      - somenetwork
+#
+#  goodsservice:
+#    build: ./goodskill-spring-boot-provider
+#    container_name: goodsservice
+
+#    restart: on-failure:3
+#    volumes:
+#      - /logs/goods-service/:/logs/goodskill
+#    depends_on:
+#      - elasticsearch
+#      - zookeeper
+#      - goodsmongo
+#      - goodses
+#      - redis
+#      - nacos
+##      - seata-server
+#    networks:
+#      - somenetwork
+#
+#  goodsweb:
+#    build: ./goodskill-web
+#    container_name: goodsweb
+#    restart: on-failure:5
+#    volumes:
+#      - /logs/goods-web/:/logs/goodskill
+#    depends_on:
+#      - goodsservice
+#      - zookeeper
+#      - redis
+#      - nacos
+#    networks:
+#      - somenetwork
+#
+#  goodsgateway:
+#    build: ./goodskill-gateway
+#    container_name: goodsgateway
+#    restart: on-failure:3
+#    volumes:
+#      - /logs/goods-gateway/:/logs/goodskill
+#    ports:
+#      - "80:80"
+#    depends_on:
+#      - nacos
+#    networks:
+#      - somenetwork
+#
+##  goodsseata:
+##    build: ./goodskill-seata
+##    container_name: goodsseata
+##    restart: on-failure:3
+##    volumes:
+##      - /logs/goods-seata/:/logs/goodskill
+##    depends_on:
+##      - seata-server
+##      - goodsservice
+##    networks:
+##      - somenetwork
+#
+#  goodsadmin:
+#    build: ./goodskill-admin
+#    container_name: goodsadmin
+#    ports:
+#      - "8083:8083"
+#    volumes:
+#      - /logs/goods-admin/:/logs/goodskill
+#    depends_on:
+#      - nacos
+#    networks:
+#      - somenetwork
+
+networks:
+  somenetwork:
+    driver: bridge

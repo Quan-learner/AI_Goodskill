@@ -1,0 +1,91 @@
+package com.goodskill.web.controller;
+
+import com.goodskill.core.feign.SeckillFeignClient;
+import com.goodskill.core.info.Result;
+import com.goodskill.core.pojo.dto.SeckillMockRequestDTO;
+import com.goodskill.core.pojo.dto.SeckillWebMockRequestDTO;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.*;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+public class SeckillMockControllerTest {
+
+    @Mock
+    private SeckillFeignClient seckillFeignClient;
+    @Mock
+    private StringRedisTemplate stringRedisTemplate;
+
+    @InjectMocks
+    private SeckillMockController seckillMockController;
+    @Spy
+    private ThreadPoolTaskExecutor taskExecutor = new ThreadPoolTaskExecutor();
+
+
+    @BeforeEach
+    void setUp() {
+        MockitoAnnotations.initMocks(this);
+        taskExecutor.initialize();
+
+        ValueOperations<String, String> valueOperations = Mockito.mock(ValueOperations.class);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.increment(anyString())).thenReturn(1L);
+    }
+
+    @Test
+    void testDoWithSychronized() {
+        SeckillWebMockRequestDTO requestDTO = new SeckillWebMockRequestDTO();
+        requestDTO.setSeckillId(1L);
+        requestDTO.setRequestCount(1);
+        requestDTO.setCorePoolSize(1);
+        requestDTO.setMaxPoolSize(10);
+        SeckillMockRequestDTO any = new SeckillMockRequestDTO();
+        any.setSeckillId(1L);
+        Result response = seckillMockController.doWithSychronized(requestDTO);
+
+        verify(seckillFeignClient, times(0)).execute(any(SeckillMockRequestDTO.class), anyInt());
+        assertEquals(0, response.getCode());
+    }
+
+    @Test
+    void testDoWithRedissonLock() {
+        SeckillWebMockRequestDTO requestDTO = new SeckillWebMockRequestDTO();
+        requestDTO.setSeckillId(1L);
+        requestDTO.setRequestCount(1);
+        SeckillMockRequestDTO any = new SeckillMockRequestDTO();
+        any.setSeckillId(1L);
+        Result response = seckillMockController.doWithRedissonLock(requestDTO);
+
+        // 等待异步任务执行完成
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        verify(seckillFeignClient, times(1)).execute(any(SeckillMockRequestDTO.class), anyInt());
+        assertEquals(0, response.getCode());
+    }
+
+    @Test
+    void doWithZookeeperLock() {
+        SeckillWebMockRequestDTO requestDTO = new SeckillWebMockRequestDTO();
+        requestDTO.setSeckillId(1L);
+        requestDTO.setRequestCount(1);
+        SeckillMockRequestDTO any = new SeckillMockRequestDTO();
+        any.setSeckillId(1L);
+        Result response = seckillMockController.doWithZookeeperLock(requestDTO);
+
+        verify(seckillFeignClient, times(0)).execute(any(SeckillMockRequestDTO.class), anyInt());
+        assertEquals(0, response.getCode());
+    }
+
+
+
+}

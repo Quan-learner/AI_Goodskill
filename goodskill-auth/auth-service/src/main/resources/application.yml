@@ -1,0 +1,61 @@
+server:
+  port: 19081
+
+auth:
+  token:
+    # refresh token 过期时间（秒），默认7天
+    refresh-expire-seconds: 604800
+
+spring:
+  application:
+    name: goodskill-auth
+  cloud:
+    nacos:
+      username: nacos
+      password: nacos
+      server-addr: 192.168.184.126:8848
+  config:
+    import:
+      - optional:nacos:goodskill-common-connection.yml
+      - optional:nacos:goodskill-common.yml
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://192.168.184.126:3306/seckill?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false
+    username: root
+    password: Password123
+  flyway:
+    ##是否开启自动升级表结构功能
+    enabled: true
+    baseline-on-migrate: true
+    clean-disabled: true
+    locations:
+      - classpath:db/migration/mysql
+
+logging:
+  level:
+    com.goodskill: debug
+
+seata:
+  enabled: false
+  #1.4.2使用此配置禁用seata
+  enable-auto-data-source-proxy: true
+  application-id: goodskill-auth
+  tx-service-group: my_test_tx_group
+  config:
+    type: nacos
+    nacos:
+      namespace: bca6fe13-8ddd-4721-b753-022fe3beabd8
+      serverAddr: nacos:8848
+      group: SEATA_GROUP
+      username: nacos
+      password: nacos
+  registry:
+    type: nacos
+    nacos:
+      application: seata-server
+      server-addr: 192.168.184.126:8848
+      group: SEATA_GROUP
+      namespace: bca6fe13-8ddd-4721-b753-022fe3beabd8
+      username: nacos
+      password: nacos
+
